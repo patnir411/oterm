@@ -1,9 +1,12 @@
 from typing import Any, AsyncGenerator, AsyncIterator, Literal, Mapping
-
+from enum import Enum
 from ollama import AsyncClient, Client
 
 from oterm.config import envConfig
 
+class Author(Enum):
+    USER = "me"
+    OLLAMA = "ollama"
 
 class OllamaLLM:
     def __init__(
@@ -37,7 +40,7 @@ class OllamaLLM:
         return response.get("response", "")
 
     async def stream(
-        self, prompt: str, images: list[str] = []
+        self, prompt: str, images: list[str] = [], msgs: list[tuple[Author, str]] = []
     ) -> AsyncGenerator[str, Any]:
         client = AsyncClient(
             host=envConfig.OLLAMA_URL, verify=envConfig.OTERM_VERIFY_SSL

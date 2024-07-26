@@ -1,5 +1,7 @@
 import asyncio
 from importlib import metadata
+import logging
+from oterm.logging_config import setup_logging
 
 import typer
 
@@ -20,6 +22,9 @@ def oterm(
     upgrade: bool = typer.Option(None, "--upgrade"),
     sqlite: bool = typer.Option(None, "--db"),
 ):
+    setup_logging()
+    logger = logging.getLogger(__name__)
+    logger.info("Starting oterm")
     if version:
         typer.echo(f"oterm v{metadata.version('oterm')}")
         exit(0)

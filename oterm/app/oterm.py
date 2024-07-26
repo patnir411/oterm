@@ -1,4 +1,6 @@
 import json
+import logging
+logging.disable(logging.CRITICAL) # TODO: for disabling logging
 
 from textual import on
 from textual.app import App, ComposeResult
@@ -10,6 +12,7 @@ from oterm.app.widgets.chat import ChatContainer
 from oterm.config import appConfig
 from oterm.store.store import Store
 
+logger = logging.getLogger(__name__)
 
 class OTerm(App):
     TITLE = "oTerm"
@@ -24,16 +27,21 @@ class OTerm(App):
     def action_toggle_dark(self) -> None:
         self.dark = not self.dark
         appConfig.set("theme", "dark" if self.dark else "light")
+        logger.info(f"Theme toggled to {'dark' if self.dark else 'light'}")
 
     async def action_quit(self) -> None:
+        logger.info("Quitting application")
         return self.exit()
 
     def action_new_chat(self) -> None:
+        logger.info("New chat requested")
         async def on_model_select(model_info: str) -> None:
+            logger.info(f"On_model_select being called: {model_info}")
             model: dict = json.loads(model_info)
-            print(model)
+            logger.info(f"Model: {model}")  
             tabs = self.query_one(TabbedContent)
             tab_count = tabs.tab_count
+            logger.info(f"Tab count: {tab_count}")
             name = f"chat #{tab_count+1} - {model['name']}"
             id = await self.store.save_chat(
                 id=None,
@@ -44,6 +52,7 @@ class OTerm(App):
                 format=model["format"],
                 keep_alive=model["keep_alive"],
             )
+            logger.info(f"New chat created with id {id} and name {name}")
             pane = TabPane(name, id=f"chat-{id}")
             pane.compose_add_child(
                 ChatContainer(
@@ -91,6 +100,7 @@ class OTerm(App):
     async def on_tab_activated(self, event: TabbedContent.TabActivated) -> None:
         container = event.pane.query_one(ChatContainer)
         await container.load_messages()
+        logger.info(f"Tab activated: {event.pane.id}")
 
     def compose(self) -> ComposeResult:
         yield Header()

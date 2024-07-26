@@ -26,7 +26,10 @@ from oterm.app.prompt_history import PromptHistory
 from oterm.app.widgets.image import ImageAdded
 from oterm.app.widgets.prompt import FlexibleInput
 from oterm.ollama import OllamaLLM
+from oterm.gpt import GPT4LLM
+import logging
 
+logger = logging.getLogger(__name__)
 
 class Author(Enum):
     USER = "me"
@@ -67,8 +70,14 @@ class ChatContainer(Widget):
         **kwargs,
     ) -> None:
         super().__init__(*children, **kwargs)
-        self.ollama = OllamaLLM(
-            model=model,
+        logger.info(f"initializing window, model is: {model}")
+        if str(model) == "gpt-4o":
+            logger.info("setting self-ollama to gpt4llm")
+            self.ollama = GPT4LLM()
+        else:
+            logger.info("detected ollama model to gpt4llm")
+            self.ollama = OllamaLLM(
+                model=model,
             context=context,
             system=system,
             format=format,
@@ -125,11 +134,19 @@ class ChatContainer(Widget):
 
             try:
                 response = ""
+                logger.info("Trying ollama stream!!")
                 async for text in self.ollama.stream(
-                    message, [img for _, img in self.images]
+                    message, [img for _, img in self.images], self.messages
                 ):
-                    response = text
-                    response_chat_item.text = text
+                    logger.info("in a stream chunk")
+                    if isinstance(self.ollama, OllamaLLM):
+                        logger.info("ollama stream chunk")
+                        response = text
+                        response_chat_item.text = text
+                    elif isinstance(self.ollama, GPT4LLM):
+                        logger.info("gpt stream chunk")
+                        response += text
+                        response_chat_item.text = response
                     if message_container.can_view(response_chat_item):
                         message_container.scroll_end()
                 self.messages.append((Author.OLLAMA, response))
@@ -165,6 +182,7 @@ class ChatContainer(Widget):
             self.inference_task.cancel()
 
     async def action_edit_chat(self) -> None:
+        logger.info("Editing chat")
         async def on_model_select(model_info: str) -> None:
             model: dict = json.loads(model_info)
             self.system = model.get("system")
@@ -179,13 +197,16 @@ class ChatContainer(Widget):
                 keep_alive=model["keep_alive"],
             )
             _, _, _, context, _, _, _ = await self.app.store.get_chat(self.db_id)
-            self.ollama = OllamaLLM(
-                model=model["name"],
-                context=context,
-                system=model["system"],
-                format=model["format"],
-                keep_alive=model["keep_alive"],
-            )
+            if model["name"] == "gpt-4o":
+                self.ollama = GPT4LLM()
+            else:
+                self.ollama = OllamaLLM(
+                    model=model["name"],
+                    context=context,
+                    system=model["system"],
+                    format=model["format"],
+                    keep_alive=model["keep_alive"],
+                )
 
         screen = ChatEdit()
         screen.model_name = self.ollama.model

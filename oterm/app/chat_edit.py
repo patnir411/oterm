@@ -12,7 +12,11 @@ from textual.widgets import Button, Checkbox, Input, Label, OptionList, Pretty
 
 from oterm.app.widgets.text_area import TextArea
 from oterm.ollama import OllamaLLM
+from oterm.gpt import GPT4LLM
 
+import logging
+
+logger = logging.getLogger(__name__)
 
 class ChatEdit(ModalScreen[str]):
     models = []
@@ -35,11 +39,18 @@ class ChatEdit(ModalScreen[str]):
     ]
 
     def _return_chat_meta(self) -> None:
-        model = f"{self.model_name}:{self.tag}"
+        logger.info("Returning chat meta!, self is ", self)
+        model = f"{self.model_name}:{self.tag}" if self.model_name != "gpt-4o" else "gpt-4o"
+        logger.info(f"Model: {model}")
         system = self.query_one(".system", TextArea).text
+        logger.info(f"System: {system}")
         system = system if system != self.model_info.get("system", "") else None
-        jsn = self.query_one(".json-format", Checkbox).value
-        keep_alive = int(self.query_one(".keep-alive", Input).value)
+        jsn = None
+        keep_alive = 5
+        if model != "gpt-4o":
+            logger.info("Model is not gpt-4o in _return_chat_meta")
+            jsn = self.query_one(".json-format", Checkbox).value
+            keep_alive = int(self.query_one(".keep-alive", Input).value)
         result = json.dumps(
             {
                 "name": model,
@@ -48,6 +59,7 @@ class ChatEdit(ModalScreen[str]):
                 "keep_alive": keep_alive,
             }
         )
+        logger.info(f"Chat meta saved: {result} while model is: {model}")
         self.dismiss(result)
 
     def _parse_model_params(self, parameter_text: str) -> list[tuple[str, Any]]:
@@ -70,21 +82,28 @@ class ChatEdit(ModalScreen[str]):
         self._return_chat_meta()
 
     def select_model(self, model: str) -> None:
+        logger.info(f"Selecting model: {model}")
         select = self.query_one("#model-select", OptionList)
         for index, option in enumerate(select._options):
             if str(option.prompt) == model:
+                logger.info(f"str(option.prompt) == model: {model}")
                 select.highlighted = index
                 break
 
     async def on_mount(self) -> None:
         self.models = OllamaLLM.list()["models"]
         models = [model["name"] for model in self.models]
+        models.append("gpt-4o")
         for model in models:
-            info = dict(OllamaLLM.show(model))
-            for key in ["modelfile", "license"]:
-                if key in info.keys():
-                    del info[key]
-            self.models_info[model] = info
+            if model != "gpt-4o":
+                info = dict(OllamaLLM.show(model))
+                logger.info(f"Model info: {info}")
+                for key in ["modelfile", "license"]:
+                    if key in info.keys():
+                        del info[key]
+                self.models_info[model] = info
+            else:
+                self.models_info[model] = {}
         option_list = self.query_one("#model-select", OptionList)
         option_list.clear_options()
         for model in models:
@@ -92,32 +111,55 @@ class ChatEdit(ModalScreen[str]):
         option_list.highlighted = self.last_highlighted_index
 
     def on_option_list_option_selected(self, option: OptionList.OptionSelected) -> None:
+        logger.info(f"Option selected: {option.option.prompt}")
         self._return_chat_meta()
 
     def on_option_list_option_highlighted(
         self, option: OptionList.OptionHighlighted
     ) -> None:
         model = option.option.prompt
-        model_meta = next((m for m in self.models if m["name"] == str(model)), None)
-        if model_meta:
-            name, tag = model_meta["name"].split(":")
-            self.model_name = name
-            self.tag = tag
-            self.bytes = model_meta["size"]
-
-            self.model_info = self.models_info[model_meta["name"]]
-            self.params = self._parse_model_params(
-                self.model_info.get("parameters", "")
-            )
+        logger.info(f"Model selected on_option_list_option_highlighted: {model}")
+        if str(model) == "gpt-4o":
+            logger.info("past-if statement... Model is gpt-4o")
+            self.model_name = "gpt-4o"
+            self.tag = ""
+            self.bytes = 0
+            self.model_info = {}
+            self.params = []
             try:
+                logger.info("Model is gpt-4o, trying to query widgets")
                 widget = self.query_one(".parameters", Pretty)
                 widget.update(self.params)
                 widget = self.query_one(".system", TextArea)
-                widget.load_text(self.system or self.model_info.get("system", ""))
+                widget.load_text("")
+                logger.info("Widgets queried successfully")
             except NoMatches:
+                logger.info("Widgets not found")
                 pass
+        else:
+            logger.info("in else statement...")
+            model_meta = next((m for m in self.models if m["name"] == str(model)), None)
+            if model_meta:
+                logger.info(f"Model meta found: {model_meta}")
+                name, tag = model_meta["name"].split(":")
+                self.model_name = name
+                self.tag = tag
+                self.bytes = model_meta["size"]
+
+                self.model_info = self.models_info[model_meta["name"]]
+                self.params = self._parse_model_params(
+                    self.model_info.get("parameters", "")
+                )
+                try:
+                    widget = self.query_one(".parameters", Pretty)
+                    widget.update(self.params)
+                    widget = self.query_one(".system", TextArea)
+                    widget.load_text(self.system or self.model_info.get("system", ""))
+                except NoMatches:
+                    pass
 
         # Now that there is a model selected we can save the chat.
+        logger.info(f"Model selected, last highlighted index: {option.option_index}")
         save_button = self.query_one("#save-btn", Button)
         save_button.disabled = False
         ChatEdit.last_highlighted_index = option.option_index
